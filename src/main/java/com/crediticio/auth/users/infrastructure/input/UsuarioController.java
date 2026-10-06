@@ -10,6 +10,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,8 +43,17 @@ public class UsuarioController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
-        return ResponseEntity.ok(getUserInputPort.getUserById(id));
+    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id, Authentication authentication) {
+        UserResponse user = getUserInputPort.getUserById(id);
+
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+        if (!isAdmin && !user.getEmail().equals(authentication.getName())) {
+            throw new AccessDeniedException("Solo puede consultar su propio perfil");
+        }
+
+        return ResponseEntity.ok(user);
     }
 
     @PatchMapping("/{id}/estado")
