@@ -248,6 +248,80 @@ class AuthFlowIntegrationTest {
     }
 
     @Nested
+    class ChangePasswordTests {
+
+        @Test
+        void changePassword_asAdmin_resetsAnyUser_returns204() throws Exception {
+            String token = loginAndGetToken("admin@test.com", "admin123");
+            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+
+            mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"newPassword\":\"NuevaClave123\"}"))
+                    .andExpect(status().isNoContent());
+
+            // Verificar que la nueva contrasena funciona
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\",\"password\":\"NuevaClave123\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.token").isNotEmpty());
+        }
+
+        @Test
+        void changePassword_asAnalista_ownPassword_returns204() throws Exception {
+            String token = loginAndGetToken("analista@test.com", "analista123");
+            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+
+            mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"currentPassword\":\"analista123\",\"newPassword\":\"CambioClave1!\"}"))
+                    .andExpect(status().isNoContent());
+
+            // Verificar que la nueva contrasena funciona
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\",\"password\":\"CambioClave1!\"}"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void changePassword_asAnalista_otherUser_returns403() throws Exception {
+            String token = loginAndGetToken("analista@test.com", "analista123");
+            Long adminId = usuarioRepository.findByEmail("admin@test.com").get().getId();
+
+            mockMvc.perform(patch("/api/v1/usuarios/" + adminId + "/password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"currentPassword\":\"analista123\",\"newPassword\":\"NuevaClave1!\"}"))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void changePassword_asAnalista_wrongCurrentPassword_returns401() throws Exception {
+            String token = loginAndGetToken("analista@test.com", "analista123");
+            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+
+            mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"currentPassword\":\"claveIncorrecta\",\"newPassword\":\"NuevaClave1!\"}"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.errorCode").value("INVALID_CREDENTIALS"));
+        }
+
+        @Test
+        void changePassword_unauthenticated_returns401() throws Exception {
+            mockMvc.perform(patch("/api/v1/usuarios/1/password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"currentPassword\":\"x\",\"newPassword\":\"NuevaClave1!\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
     class TokenTests {
 
         @Test
