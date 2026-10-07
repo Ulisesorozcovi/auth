@@ -1,5 +1,6 @@
 package com.crediticio.auth.users.application.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -10,8 +11,10 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Solicitud para cambiar el estado activo/inactivo de un usuario")
 public class ToggleStatusRequest {
 
     @NotNull
+    @Schema(description = "Nuevo estado del usuario", example = "false")
     private Boolean activo;
 }

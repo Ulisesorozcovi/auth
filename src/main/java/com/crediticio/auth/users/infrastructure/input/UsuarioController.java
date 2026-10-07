@@ -1,11 +1,17 @@
 package com.crediticio.auth.users.infrastructure.input;
 
+import com.crediticio.auth.shared.response.ApiError;
 import com.crediticio.auth.users.application.dto.CreateUserRequest;
 import com.crediticio.auth.users.application.dto.ToggleStatusRequest;
 import com.crediticio.auth.users.application.dto.UserResponse;
 import com.crediticio.auth.users.ports.input.CreateUserInputPort;
 import com.crediticio.auth.users.ports.input.GetUserInputPort;
 import com.crediticio.auth.users.ports.input.ToggleUserStatusInputPort;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -25,6 +31,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/usuarios")
 @RequiredArgsConstructor
+@Tag(name = "Usuarios", description = "CRUD de usuarios del sistema. Requiere rol ADMIN para crear, listar y cambiar estado. ANALISTA puede consultar su propio perfil.")
 public class UsuarioController {
 
     private final CreateUserInputPort createUserInputPort;
@@ -32,17 +39,40 @@ public class UsuarioController {
     private final ToggleUserStatusInputPort toggleUserStatusInputPort;
 
     @PostMapping
+    @Operation(
+            summary = "Crear usuario",
+            description = "Registra un nuevo usuario con rol asignado. Solo ADMIN."
+    )
+    @ApiResponse(responseCode = "201", description = "Usuario creado exitosamente")
+    @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
+    @ApiResponse(responseCode = "409", description = "Email ya registrado",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         UserResponse response = createUserInputPort.createUser(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping
+    @Operation(
+            summary = "Listar usuarios",
+            description = "Retorna todos los usuarios del sistema. Solo ADMIN."
+    )
+    @ApiResponse(responseCode = "200", description = "Lista de usuarios")
     public ResponseEntity<List<UserResponse>> getAllUsers() {
         return ResponseEntity.ok(getUserInputPort.getAllUsers());
     }
 
     @GetMapping("/{id}")
+    @Operation(
+            summary = "Consultar usuario por ID",
+            description = "ADMIN puede consultar cualquier usuario. ANALISTA solo su propio perfil."
+    )
+    @ApiResponse(responseCode = "200", description = "Detalle del usuario")
+    @ApiResponse(responseCode = "403", description = "ANALISTA intentó consultar otro perfil",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
+    @ApiResponse(responseCode = "404", description = "Usuario no encontrado",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
     public ResponseEntity<UserResponse> getUserById(@PathVariable Long id, Authentication authentication) {
         UserResponse user = getUserInputPort.getUserById(id);
 
@@ -57,6 +87,13 @@ public class UsuarioController {
     }
 
     @PatchMapping("/{id}/estado")
+    @Operation(
+            summary = "Activar o desactivar usuario",
+            description = "Cambia el estado activo/inactivo de un usuario. Solo ADMIN."
+    )
+    @ApiResponse(responseCode = "200", description = "Estado actualizado")
+    @ApiResponse(responseCode = "404", description = "Usuario no encontrado",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
     public ResponseEntity<UserResponse> toggleStatus(
             @PathVariable Long id,
             @Valid @RequestBody ToggleStatusRequest request) {
