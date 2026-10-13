@@ -50,7 +50,15 @@ public class AuthService implements AuthInputPort {
         }
 
         String email = tokenProvider.getEmailFromToken(token);
-        String rol = tokenProvider.getRolFromToken(token);
+
+        Usuario usuario = userRepository.findByEmail(email)
+                .orElseThrow(() -> new InvalidCredentialsException("Usuario no encontrado"));
+
+        if (!usuario.isActivo()) {
+            throw new InvalidCredentialsException("Usuario desactivado");
+        }
+
+        String rol = usuario.getRol().getNombre();
         String newToken = tokenProvider.generateToken(email, rol);
 
         return LoginResponse.builder()
@@ -66,15 +74,18 @@ public class AuthService implements AuthInputPort {
         }
 
         String email = tokenProvider.getEmailFromToken(token);
-        String rol = tokenProvider.getRolFromToken(token);
 
         Usuario usuario = userRepository.findByEmail(email)
                 .orElseThrow(() -> new InvalidCredentialsException("Usuario no encontrado"));
 
+        if (!usuario.isActivo()) {
+            throw new InvalidCredentialsException("Usuario desactivado");
+        }
+
         return TokenValidationResponse.builder()
                 .userId(usuario.getId())
                 .email(usuario.getEmail())
-                .rol(rol)
+                .rol(usuario.getRol().getNombre())
                 .build();
     }
 }

@@ -1,5 +1,6 @@
 package com.crediticio.auth.integration;
 
+import com.crediticio.auth.authentication.infrastructure.output.PasswordResetTokenJpaRepository;
 import com.crediticio.auth.authentication.ports.output.PasswordEncoderPort;
 import com.crediticio.auth.roles.infrastructure.output.RolJpaEntity;
 import com.crediticio.auth.roles.infrastructure.output.RolJpaRepository;
@@ -41,11 +42,15 @@ class AuthFlowIntegrationTest {
     @Autowired
     private PasswordEncoderPort passwordEncoder;
 
+    @Autowired
+    private PasswordResetTokenJpaRepository resetTokenRepository;
+
     private RolJpaEntity adminRol;
     private RolJpaEntity analistaRol;
 
     @BeforeEach
     void setUp() {
+        resetTokenRepository.deleteAll();
         usuarioRepository.deleteAll();
         rolRepository.deleteAll();
 
@@ -130,7 +135,7 @@ class AuthFlowIntegrationTest {
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"password123\",\"idRol\":" + analistaRol.getId() + "}"))
+                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"Password1!\",\"idRol\":" + analistaRol.getId() + "}"))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.nombre").value("Nuevo"))
                     .andExpect(jsonPath("$.email").value("nuevo@test.com"))
@@ -146,7 +151,7 @@ class AuthFlowIntegrationTest {
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"password123\",\"idRol\":1}"))
+                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"Password1!\",\"idRol\":1}"))
                     .andExpect(status().isForbidden());
         }
 
@@ -154,7 +159,7 @@ class AuthFlowIntegrationTest {
         void createUser_unauthenticated_returns401() throws Exception {
             mockMvc.perform(post("/api/v1/usuarios")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"password123\",\"idRol\":1}"))
+                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"Password1!\",\"idRol\":1}"))
                     .andExpect(status().isUnauthorized());
         }
 
@@ -165,7 +170,7 @@ class AuthFlowIntegrationTest {
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Dup\",\"email\":\"admin@test.com\",\"password\":\"password123\",\"idRol\":" + adminRol.getId() + "}"))
+                            .content("{\"nombre\":\"Dup\",\"email\":\"admin@test.com\",\"password\":\"Password1!\",\"idRol\":" + adminRol.getId() + "}"))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.errorCode").value("DUPLICATE_EMAIL"));
         }
@@ -258,13 +263,13 @@ class AuthFlowIntegrationTest {
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"newPassword\":\"NuevaClave123\"}"))
+                            .content("{\"newPassword\":\"NuevaClave1!\"}"))
                     .andExpect(status().isNoContent());
 
             // Verificar que la nueva contrasena funciona
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"analista@test.com\",\"password\":\"NuevaClave123\"}"))
+                            .content("{\"email\":\"analista@test.com\",\"password\":\"NuevaClave1!\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").isNotEmpty());
         }
@@ -438,6 +443,118 @@ class AuthFlowIntegrationTest {
             mockMvc.perform(get("/api/v1/usuarios")
                             .header("Authorization", "Bearer invalid.token.here"))
                     .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
+    class PasswordResetTests {
+
+        @Test
+        void forgotPassword_existingUser_returns200() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/forgot-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\"}"))
+                    .andExpect(status().isOk());
+
+            assertEquals(1, resetTokenRepository.count());
+        }
+
+        @Test
+        void forgotPassword_nonExistentEmail_returns200_noTokenCreated() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/forgot-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"noexiste@test.com\"}"))
+                    .andExpect(status().isOk());
+
+            assertEquals(0, resetTokenRepository.count());
+        }
+
+        @Test
+        void resetPassword_validToken_resetsAndCanLogin() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/forgot-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\"}"))
+                    .andExpect(status().isOk());
+
+            String token = resetTokenRepository.findAll().get(0).getToken();
+
+            mockMvc.perform(post("/api/v1/auth/reset-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"token\":\"" + token + "\",\"newPassword\":\"Reseteo1!\"}"))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(post("/api/v1/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\",\"password\":\"Reseteo1!\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.token").isNotEmpty());
+        }
+
+        @Test
+        void resetPassword_usedToken_returns401() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/forgot-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"analista@test.com\"}"))
+                    .andExpect(status().isOk());
+
+            String token = resetTokenRepository.findAll().get(0).getToken();
+
+            mockMvc.perform(post("/api/v1/auth/reset-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"token\":\"" + token + "\",\"newPassword\":\"Reseteo1!\"}"))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(post("/api/v1/auth/reset-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"token\":\"" + token + "\",\"newPassword\":\"OtraClave1!\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void resetPassword_invalidToken_returns401() throws Exception {
+            mockMvc.perform(post("/api/v1/auth/reset-password")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"token\":\"token-invalido\",\"newPassword\":\"Reseteo1!\"}"))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Nested
+    class PasswordValidationTests {
+
+        @Test
+        void createUser_weakPassword_returns400() throws Exception {
+            String token = loginAndGetToken("admin@test.com", "admin123");
+
+            mockMvc.perform(post("/api/v1/usuarios")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"password\",\"idRol\":" + analistaRol.getId() + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+        }
+
+        @Test
+        void createUser_passwordNoSpecialChar_returns400() throws Exception {
+            String token = loginAndGetToken("admin@test.com", "admin123");
+
+            mockMvc.perform(post("/api/v1/usuarios")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"Password1\",\"idRol\":" + analistaRol.getId() + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"));
+        }
+
+        @Test
+        void createUser_strongPassword_returns201() throws Exception {
+            String token = loginAndGetToken("admin@test.com", "admin123");
+
+            mockMvc.perform(post("/api/v1/usuarios")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"Segura1!\",\"idRol\":" + analistaRol.getId() + "}"))
+                    .andExpect(status().isCreated());
         }
     }
 }

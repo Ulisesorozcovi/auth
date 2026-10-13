@@ -92,9 +92,10 @@ class AuthServiceTest {
 
     @Test
     void refresh_validToken_returnsNewToken() {
+        Usuario usuario = buildActiveUser();
         when(tokenProvider.isTokenValid("old-token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("old-token")).thenReturn("juan@test.com");
-        when(tokenProvider.getRolFromToken("old-token")).thenReturn("ADMIN");
+        when(userRepository.findByEmail("juan@test.com")).thenReturn(Optional.of(usuario));
         when(tokenProvider.generateToken("juan@test.com", "ADMIN")).thenReturn("new-token");
 
         LoginResponse response = authService.refresh("old-token");
@@ -111,11 +112,25 @@ class AuthServiceTest {
     }
 
     @Test
+    void refresh_inactiveUser_throws() {
+        Usuario inactive = Usuario.builder()
+                .id(1L).nombre("Juan").email("juan@test.com")
+                .passwordHash("hashed").activo(false)
+                .rol(Rol.builder().id(1L).nombre("ADMIN").build())
+                .fechaCreacion(LocalDateTime.now())
+                .build();
+        when(tokenProvider.isTokenValid("old-token")).thenReturn(true);
+        when(tokenProvider.getEmailFromToken("old-token")).thenReturn("juan@test.com");
+        when(userRepository.findByEmail("juan@test.com")).thenReturn(Optional.of(inactive));
+
+        assertThrows(InvalidCredentialsException.class, () -> authService.refresh("old-token"));
+    }
+
+    @Test
     void validate_validToken_returnsUserInfo() {
         Usuario usuario = buildActiveUser();
         when(tokenProvider.isTokenValid("valid-token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid-token")).thenReturn("juan@test.com");
-        when(tokenProvider.getRolFromToken("valid-token")).thenReturn("ADMIN");
         when(userRepository.findByEmail("juan@test.com")).thenReturn(Optional.of(usuario));
 
         TokenValidationResponse response = authService.validate("valid-token");
@@ -123,6 +138,21 @@ class AuthServiceTest {
         assertEquals(1L, response.getUserId());
         assertEquals("juan@test.com", response.getEmail());
         assertEquals("ADMIN", response.getRol());
+    }
+
+    @Test
+    void validate_inactiveUser_throws() {
+        Usuario inactive = Usuario.builder()
+                .id(1L).nombre("Juan").email("juan@test.com")
+                .passwordHash("hashed").activo(false)
+                .rol(Rol.builder().id(1L).nombre("ADMIN").build())
+                .fechaCreacion(LocalDateTime.now())
+                .build();
+        when(tokenProvider.isTokenValid("valid-token")).thenReturn(true);
+        when(tokenProvider.getEmailFromToken("valid-token")).thenReturn("juan@test.com");
+        when(userRepository.findByEmail("juan@test.com")).thenReturn(Optional.of(inactive));
+
+        assertThrows(InvalidCredentialsException.class, () -> authService.validate("valid-token"));
     }
 
     @Test
