@@ -70,6 +70,7 @@ Autentica un usuario con email y contrasena. Retorna un JWT firmado y el rol.
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Email vacio, formato invalido, password vacio |
 | 401 | `INVALID_CREDENTIALS` | Email no registrado, contrasena incorrecta, o usuario desactivado |
+| 429 | `RATE_LIMIT_EXCEEDED` | Mas de 5 intentos fallidos en 15 minutos desde la misma IP |
 
 ---
 
@@ -136,7 +137,68 @@ Body: (vacio)
 
 | HTTP | errorCode | Causa |
 |---|---|---|
-| 401 | `INVALID_CREDENTIALS` | Token invalido, expirado, o usuario no encontrado en BD |
+| 401 | `INVALID_CREDENTIALS` | Token invalido, expirado, usuario no encontrado o desactivado |
+
+---
+
+### POST /auth/forgot-password
+
+Solicita un token de recuperacion de contrasena. Si el email existe y el usuario esta activo, se envia un token al email. Siempre retorna 200 para no revelar si el email existe en el sistema.
+
+**Acceso:** Publico (no requiere token)
+
+**Request:**
+
+```json
+{
+  "email": "usuario@ejemplo.com"
+}
+```
+
+| Campo | Tipo | Validacion |
+|---|---|---|
+| `email` | string | Requerido, formato email valido, max 255 |
+
+**Response 200:** (sin cuerpo — si el email existe, se envio el token)
+
+**Errores:**
+
+| HTTP | errorCode | Causa |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Email vacio o formato invalido |
+
+> **Nota de seguridad:** el endpoint siempre retorna 200, incluso si el email no existe, para prevenir enumeracion de usuarios.
+
+---
+
+### POST /auth/reset-password
+
+Restablece la contrasena usando el token de recuperacion recibido por email. El token es de un solo uso y expira en 30 minutos.
+
+**Acceso:** Publico (no requiere token JWT)
+
+**Request:**
+
+```json
+{
+  "token": "550e8400-e29b-41d4-a716-446655440000",
+  "newPassword": "NuevaClave1!"
+}
+```
+
+| Campo | Tipo | Validacion |
+|---|---|---|
+| `token` | string | Requerido. Token UUID recibido por email |
+| `newPassword` | string | Requerido, 8-72 caracteres. Debe incluir: mayuscula, minuscula, digito y caracter especial (`@$!%*?&`) |
+
+**Response 204:** (sin cuerpo — la contrasena se restablecio exitosamente)
+
+**Errores:**
+
+| HTTP | errorCode | Causa |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | Token vacio, newPassword no cumple complejidad |
+| 401 | `INVALID_CREDENTIALS` | Token invalido, expirado o ya utilizado |
 
 ---
 
@@ -161,7 +223,7 @@ Crea un nuevo usuario con un rol asignado. La contrasena se almacena como hash B
 |---|---|---|
 | `nombre` | string | Requerido, max 150 caracteres |
 | `email` | string | Requerido, formato email, max 255, unico en el sistema |
-| `password` | string | Requerido, minimo 8 caracteres |
+| `password` | string | Requerido, 8-72 caracteres. Debe incluir: mayuscula, minuscula, digito y caracter especial (`@$!%*?&`) |
 | `idRol` | number | Requerido. `1` = ADMIN, `2` = ANALISTA |
 
 **Response 201:**
@@ -184,7 +246,7 @@ Crea un nuevo usuario con un rol asignado. La contrasena se almacena como hash B
 
 | HTTP | errorCode | Causa |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Campos vacios, email invalido, password < 8 chars, idRol null. `details` contiene errores por campo |
+| 400 | `VALIDATION_ERROR` | Campos vacios, email invalido, password no cumple complejidad (8-72 chars, mayuscula, minuscula, digito, especial), idRol null. `details` contiene errores por campo |
 | 401 | `UNAUTHORIZED` | Sin token |
 | 403 | `ACCESS_DENIED` | El usuario no es ADMIN |
 | 404 | `ROL_NOT_FOUND` | El `idRol` no existe en la tabla roles |
@@ -350,7 +412,7 @@ Cambia la contrasena de un usuario.
 | Campo | Tipo | Validacion |
 |---|---|---|
 | `currentPassword` | string | Requerido solo si no es ADMIN. Se verifica contra el hash actual |
-| `newPassword` | string | Requerido, minimo 8 caracteres |
+| `newPassword` | string | Requerido, 8-72 caracteres. Debe incluir: mayuscula, minuscula, digito y caracter especial (`@$!%*?&`) |
 
 **Response 204:** (sin cuerpo — la contrasena se cambio exitosamente)
 
@@ -358,7 +420,7 @@ Cambia la contrasena de un usuario.
 
 | HTTP | errorCode | Causa |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | `newPassword` vacia o < 8 caracteres |
+| 400 | `VALIDATION_ERROR` | `newPassword` no cumple complejidad (8-72 chars, mayuscula, minuscula, digito, especial) |
 | 401 | `UNAUTHORIZED` | Sin token |
 | 401 | `INVALID_CREDENTIALS` | `currentPassword` incorrecta o no proporcionada (ANALISTA) |
 | 403 | `ACCESS_DENIED` | ANALISTA intento cambiar contrasena de otro usuario |
@@ -402,6 +464,11 @@ Todas las respuestas de error usan el mismo formato:
 | `USER_NOT_FOUND` | 404 | No existe usuario con el ID proporcionado |
 | `ROL_NOT_FOUND` | 404 | No existe rol con el ID proporcionado |
 | `DUPLICATE_EMAIL` | 409 | Ya existe un usuario registrado con ese email |
+| `RATE_LIMIT_EXCEEDED` | 429 | Demasiados intentos de login. Esperar 15 minutos |
+| `MALFORMED_REQUEST` | 400 | El cuerpo de la peticion no es JSON valido |
+| `METHOD_NOT_ALLOWED` | 405 | Metodo HTTP no soportado para esta ruta |
+| `NOT_FOUND` | 404 | Ruta no encontrada (distinto de USER/ROL_NOT_FOUND) |
+| `INTERNAL_ERROR` | 500 | Error interno del servidor. Consultar `traceId` en logs |
 
 ---
 
@@ -501,6 +568,16 @@ async function refreshToken() {
   const { data } = await api.post('/auth/refresh');
   localStorage.setItem('token', data.token);
   return data;
+}
+
+// Solicitar recuperacion de contrasena
+async function forgotPassword(email) {
+  await api.post('/auth/forgot-password', { email });
+}
+
+// Restablecer contrasena con token
+async function resetPassword(token, newPassword) {
+  await api.post('/auth/reset-password', { token, newPassword });
 }
 ```
 

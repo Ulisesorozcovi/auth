@@ -130,9 +130,11 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 
 | Metodo | Ruta | Descripcion | Acceso |
 |---|---|---|---|
-| `POST` | `/login` | Login con email y contrasena → JWT + rol | Publico |
-| `POST` | `/refresh` | Renueva un token valido | ADMIN, ANALISTA |
+| `POST` | `/login` | Login con email y contrasena → JWT + rol | Publico (rate limited: 5 intentos/15 min) |
+| `POST` | `/refresh` | Renueva un token valido (lee rol actual de BD) | ADMIN, ANALISTA |
 | `GET` | `/validate` | Valida token y retorna identidad + rol | ADMIN, ANALISTA |
+| `POST` | `/forgot-password` | Solicita token de recuperacion por email | Publico |
+| `POST` | `/reset-password` | Restablece contrasena con token de recuperacion | Publico |
 
 ### Usuarios (`/api/v1/usuarios`)
 
@@ -148,14 +150,17 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 
 | Endpoint | ADMIN | ANALISTA | Publico |
 |---|---|---|---|
-| `POST /auth/login` | — | — | Si |
+| `POST /auth/login` | — | — | Si (rate limited) |
 | `POST /auth/refresh` | Si | Si | — |
 | `GET /auth/validate` | Si | Si | — |
+| `POST /auth/forgot-password` | — | — | Si |
+| `POST /auth/reset-password` | — | — | Si |
 | `POST /usuarios` | Si | — | — |
 | `GET /usuarios` | Si | — | — |
 | `GET /usuarios/{id}` | Si | Solo propio | — |
 | `PATCH /usuarios/{id}/estado` | Si | — | — |
 | `PATCH /usuarios/{id}/password` | Si (cualquiera) | Solo propia | — |
+| `/actuator/**` | Si | — | Solo `/health` |
 
 ### Respuesta de error
 
@@ -195,6 +200,18 @@ Seed: `ADMIN`, `ANALISTA`.
 | `fecha_creacion` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |
 | `fecha_modificacion` | TIMESTAMP | Nullable |
 
+### `password_reset_tokens`
+
+| Columna | Tipo | Restriccion |
+|---|---|---|
+| `id` | SERIAL | PK |
+| `token` | VARCHAR(255) | UNIQUE NOT NULL |
+| `email` | VARCHAR(255) | NOT NULL |
+| `expires_at` | TIMESTAMP | NOT NULL |
+| `used` | BOOLEAN | DEFAULT FALSE |
+
+Tokens de un solo uso con expiracion de 30 minutos. Se invalidan los anteriores al solicitar uno nuevo.
+
 ### Tablas de auditoria (Hibernate Envers)
 
 | Tabla | Proposito |
@@ -215,6 +232,7 @@ Cada operacion de escritura genera automaticamente una fila en la tabla `_aud` c
 | `V103` | Tablas de auditoria Envers (`revinfo`, `usuarios_aud`, `roles_aud`) |
 | `V104` | Procedimiento almacenado `sp_resumen_usuarios_por_rol()` |
 | `V105` | Seed del usuario administrador inicial |
+| `V106` | Tabla `password_reset_tokens` para recuperacion de contrasena |
 
 Prefijo `V100+` para no colisionar con las migraciones del Motor de Scoring (`V1-V99`).
 
@@ -262,11 +280,17 @@ Consulta no trivial con `LEFT JOIN`, `GROUP BY` y `FILTER` condicional.
 ### Medidas implementadas
 
 - **Contrasenas:** hash BCrypt, nunca en texto plano. `password_hash` nunca se expone en respuestas.
+- **Complejidad de contrasenas:** minimo 8 caracteres, maximo 72 (limite BCrypt), debe incluir mayuscula, minuscula, digito y caracter especial (`@$!%*?&`).
 - **JWT:** firmado con HMAC-SHA256, clave via variable de entorno, expiracion configurable.
 - **RBAC:** por endpoint en Spring Security. Politica "solo propio" para ANALISTA en perfil y contrasena.
 - **Cambio de contrasena:** ANALISTA debe verificar contrasena actual; ADMIN puede hacer reset.
+- **Recuperacion de contrasena:** flujo "olvide mi contrasena" con token UUID de un solo uso, expiracion 30 minutos. Notificacion desacoplada via `NotificationPort` (actualmente logea a consola; reemplazable por SMTP).
+- **Rate limiting:** proteccion contra fuerza bruta en login — 5 intentos por IP cada 15 minutos (HTTP 429).
 - **Revocacion de acceso:** al desactivar un usuario, cualquier token existente queda inutilizado. El filtro JWT verifica el estado `activo` en BD en cada peticion.
-- **CORS:** origenes explicitos configurables, no `*`.
+- **Security headers:** Content-Security-Policy, Referrer-Policy (strict-origin-when-cross-origin), Permissions-Policy (camera, mic, geolocation deshabilitados), X-Content-Type-Options, X-Frame-Options, Cache-Control.
+- **CORS:** origenes explicitos configurables, headers restringidos a `Authorization`, `Content-Type`, `Accept`.
+- **Actuator:** solo `/health` publico; el resto restringido a rol ADMIN.
+- **Manejo de errores:** respuestas `ApiError` estructuradas para todos los escenarios, incluyendo 500 generico sin stack trace expuesto.
 - **Auditoria:** Hibernate Envers registra cada cambio con timestamp y usuario responsable.
 - **Logs:** JSON estructurado en produccion (compatible ELK/CloudWatch/Datadog).
 - **SCA:** OWASP Dependency-Check falla el build si un CVE tiene CVSS >= 7.
@@ -292,12 +316,13 @@ Documentado en [`docs/SECURITY_OWASP.md`](docs/SECURITY_OWASP.md). Cubre las 10 
 | Clase | Tipo | Tests | Cobertura |
 |---|---|---|---|
 | `UserServiceTest` | Unitario | 14 | createUser, getAllUsers, getUserById, toggleStatus, changePassword |
-| `AuthServiceTest` | Unitario | 8 | login, refresh, validate (exito + errores) |
+| `AuthServiceTest` | Unitario | 10 | login, refresh (con BD), validate (con BD), usuarios inactivos |
+| `PasswordResetServiceTest` | Unitario | 6 | forgotPassword, resetPassword (exito, token expirado/usado/invalido) |
 | `JwtTokenProviderTest` | Unitario | 7 | generate, validate, expired, malformed, null, wrong secret |
-| `AuthFlowIntegrationTest` | Integracion | 25 | Login, CRUD, RBAC, cambio contrasena, tokens, usuarios desactivados |
+| `AuthFlowIntegrationTest` | Integracion | 33 | Login, CRUD, RBAC, cambio contrasena, tokens, desactivados, forgot/reset password, validacion complejidad |
 | `AuthApplicationTests` | Contexto | 1 | Spring Boot context loads |
 
-**Total: 55 tests.**
+**Total: 71 tests.**
 
 ## Decisiones arquitectonicas (ADR)
 
