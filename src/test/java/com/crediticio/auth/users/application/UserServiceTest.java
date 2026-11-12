@@ -7,8 +7,10 @@ import com.crediticio.auth.shared.exception.DuplicateEmailException;
 import com.crediticio.auth.shared.exception.InvalidCredentialsException;
 import com.crediticio.auth.shared.exception.RolNoPermitidoException;
 import com.crediticio.auth.shared.exception.RolNotFoundException;
+import com.crediticio.auth.shared.exception.SelfDeactivationException;
 import com.crediticio.auth.shared.exception.UserNotFoundException;
 import com.crediticio.auth.users.application.dto.ChangePasswordRequest;
+import com.crediticio.auth.users.application.dto.ChangeRoleRequest;
 import com.crediticio.auth.users.application.dto.CreateUserRequest;
 import com.crediticio.auth.users.application.dto.ToggleStatusRequest;
 import com.crediticio.auth.users.application.dto.UserResponse;
@@ -191,7 +193,7 @@ class UserServiceTest {
         when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
         when(userRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        UserResponse response = userService.toggleStatus(1L, new ToggleStatusRequest(false));
+        UserResponse response = userService.toggleStatus(1L, new ToggleStatusRequest(false), "admin@test.com");
 
         assertFalse(response.isActivo());
     }
@@ -201,7 +203,28 @@ class UserServiceTest {
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThrows(UserNotFoundException.class,
-                () -> userService.toggleStatus(99L, new ToggleStatusRequest(false)));
+                () -> userService.toggleStatus(99L, new ToggleStatusRequest(false), "admin@test.com"));
+    }
+
+    @Test
+    void toggleStatus_selfDeactivation_throws() {
+        Usuario usuario = buildUsuario(1L, "Admin", "admin@test.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
+
+        assertThrows(SelfDeactivationException.class,
+                () -> userService.toggleStatus(1L, new ToggleStatusRequest(false), "admin@test.com"));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void toggleStatus_selfActivation_allowed() {
+        Usuario usuario = buildUsuario(1L, "Admin", "admin@test.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
+        when(userRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserResponse response = userService.toggleStatus(1L, new ToggleStatusRequest(true), "admin@test.com");
+
+        assertTrue(response.isActivo());
     }
 
     // --- changePassword tests ---
@@ -268,5 +291,49 @@ class UserServiceTest {
 
         assertThrows(UserNotFoundException.class,
                 () -> userService.changePassword(99L, new ChangePasswordRequest("p", "newPass123"), "x@test.com", true));
+    }
+
+    // --- updateRole tests ---
+
+    @Test
+    void updateRole_success() {
+        Rol analistaRol = Rol.builder().id(2L).nombre("ANALISTA_CREDITO").build();
+        Usuario usuario = buildUsuario(1L, "Juan", "juan@test.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
+        when(rolRepository.findByNombre("ANALISTA_CREDITO")).thenReturn(Optional.of(analistaRol));
+        when(userRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserResponse response = userService.updateRole(1L, new ChangeRoleRequest("ANALISTA_CREDITO"));
+
+        assertEquals("ANALISTA_CREDITO", response.getRolNombre());
+    }
+
+    @Test
+    void updateRole_userNotFound_throws() {
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class,
+                () -> userService.updateRole(99L, new ChangeRoleRequest("ANALISTA_CREDITO")));
+    }
+
+    @Test
+    void updateRole_invalidRole_throws() {
+        Usuario usuario = buildUsuario(1L, "Juan", "juan@test.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
+
+        assertThrows(RolNoPermitidoException.class,
+                () -> userService.updateRole(1L, new ChangeRoleRequest("SUPERADMIN")));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void updateRole_roleNotInDb_throws() {
+        Usuario usuario = buildUsuario(1L, "Juan", "juan@test.com");
+        when(userRepository.findById(1L)).thenReturn(Optional.of(usuario));
+        when(rolRepository.findByNombre("ANALISTA_CREDITO")).thenReturn(Optional.empty());
+
+        assertThrows(RolNotFoundException.class,
+                () -> userService.updateRole(1L, new ChangeRoleRequest("ANALISTA_CREDITO")));
+        verify(userRepository, never()).save(any());
     }
 }

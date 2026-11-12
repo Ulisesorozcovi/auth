@@ -50,7 +50,7 @@ com.crediticio.auth/
 │   ├── application/         # UserService + DTOs
 │   ├── domain/              # Usuario (entidad pura)
 │   ├── ports/
-│   │   ├── input/           # CreateUser, GetUser, ToggleStatus, ChangePassword
+│   │   ├── input/           # CreateUser, GetUser, ToggleStatus, UpdateUserRole, ChangePassword
 │   │   └── output/          # UserRepositoryPort
 │   └── infrastructure/
 │       ├── input/           # UsuarioController
@@ -233,6 +233,7 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 | `GET` | `/` | Lista todos los usuarios | ADMINISTRADOR_RIESGO |
 | `GET` | `/{id}` | Detalle de un usuario | ADMINISTRADOR_RIESGO (cualquiera), ANALISTA_CREDITO (solo propio) |
 | `PATCH` | `/{id}/estado` | Activa o desactiva un usuario | ADMINISTRADOR_RIESGO |
+| `PATCH` | `/{id}/rol` | Cambia el rol de un usuario | ADMINISTRADOR_RIESGO |
 | `PATCH` | `/{id}/password` | Cambia la contrasena de un usuario | ADMINISTRADOR_RIESGO (reset), ANALISTA_CREDITO (solo propia, requiere contrasena actual) |
 
 ### Matriz RBAC
@@ -247,6 +248,7 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 | `GET /usuarios` | Si | — | — |
 | `GET /usuarios/{id}` | Si | Solo propio | — |
 | `PATCH /usuarios/{id}/estado` | Si | — | — |
+| `PATCH /usuarios/{id}/rol` | Si | — | — |
 | `PATCH /usuarios/{id}/password` | Si (cualquiera) | Solo propia | — |
 
 ### Respuesta de error
@@ -262,6 +264,13 @@ Todas las respuestas de error siguen el formato `ApiError`:
   "timestamp": "2026-10-06T15:30:00"
 }
 ```
+
+### Comportamiento de autenticacion y gestion de usuarios
+
+- **Usuarios inactivos:** reciben 401 al intentar login, al refrescar token y al validar token. La respuesta no distingue entre credenciales incorrectas y usuario inactivo (misma respuesta generica para no revelar estado).
+- **Cambio de rol:** al cambiar el rol de un usuario (`PATCH /{id}/rol`), el cambio se refleja en el siguiente JWT generado (proximo login o refresh). No se invalidan tokens existentes.
+- **Auto-desactivacion:** un administrador no puede desactivarse a si mismo (`PATCH /{id}/estado` con `activo: false` sobre su propio ID responde 400 `SELF_DEACTIVATION`).
+- **Roles validos:** solo se permiten `ADMINISTRADOR_RIESGO` y `ANALISTA_CREDITO`. Cualquier otro nombre responde 400.
 
 ## Modelo de datos
 
@@ -285,6 +294,7 @@ Seed: `ADMINISTRADOR_RIESGO`, `ANALISTA_CREDITO`.
 | `password_hash` | VARCHAR(255) | NOT NULL |
 | `id_rol` | INTEGER | FK → `roles.id_rol` |
 | `activo` | BOOLEAN | DEFAULT TRUE |
+| `creado_por` | VARCHAR(255) | Email del admin que creo al usuario |
 | `fecha_creacion` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |
 | `fecha_modificacion` | TIMESTAMP | Nullable |
 
@@ -424,15 +434,17 @@ Documentado en [`docs/SECURITY_OWASP.md`](docs/SECURITY_OWASP.md). Cubre las 10 
 
 | Clase | Tipo | Tests | Cobertura |
 |---|---|---|---|
-| `UserServiceTest` | Unitario | 18 | createUser (normalizacion, rol permitido, carrera), getAllUsers, getUserById, toggleStatus, changePassword |
+| `UserServiceTest` | Unitario | 24 | createUser (normalizacion, rol permitido, carrera), getAllUsers, getUserById, toggleStatus (auto-desactivacion), updateRole (rol invalido, no encontrado), changePassword |
 | `AuthServiceTest` | Unitario | 19 | login, refresh (rotacion, reutilizacion, vencido, inactivo, carrera), logout, validate |
 | `JwtTokenProviderTest` | Unitario | 12 | RS256 claims, iss/aud, vencido, alterado, rechazo HMAC, refresh opaco/hash, limites de configuracion |
 | `AdminBootstrapRunnerTest` | Unitario | 4 | Primer administrador por variables de entorno |
 | `HttpErrorHandlingIntegrationTest` | Integracion (servidor HTTP real) | 12 | Errores de entrada 400 (JSON mal formado, tipos), UTF-8 en 401/403, `idRol` inexistente, refresh invalido 401 |
 | `AuthFlowIntegrationTest` | Integracion | 44 | Login, CRUD, RBAC, cambio contrasena, refresh/logout, concurrencia, usuarios desactivados |
+| `UserRoleIntegrationTest` | Integracion | 7 | Cambio de rol (flujo completo, 403 analista, rol invalido, 404, blank, auto-desactivacion, desactivar+login falla) |
+| `RegressionTest` | Integracion | 5 | Login activo, creacion de usuario, toggle estado, listar usuarios, consultar por ID |
 | `AuthApplicationTests` | Contexto | 1 | Spring Boot context loads |
 
-**Total: 110 tests** (verificado con `mvnw clean test` en JDK 21).
+**Total: 128 tests** (verificado con `mvnw clean test` en JDK 21).
 
 ## Decisiones arquitectonicas (ADR)
 

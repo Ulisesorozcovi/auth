@@ -37,6 +37,11 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, "ROL_NOT_ALLOWED", ex.getMessage());
     }
 
+    @ExceptionHandler(SelfDeactivationException.class)
+    public ResponseEntity<ApiError> handleSelfDeactivation(SelfDeactivationException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, "SELF_DEACTIVATION", ex.getMessage());
+    }
+
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<ApiError> handleDuplicateEmail(DuplicateEmailException ex) {
         return buildResponse(HttpStatus.CONFLICT, "DUPLICATE_EMAIL", ex.getMessage());
