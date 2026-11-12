@@ -9,8 +9,10 @@ import com.crediticio.auth.shared.exception.DuplicateEmailException;
 import com.crediticio.auth.shared.exception.InvalidCredentialsException;
 import com.crediticio.auth.shared.exception.RolNoPermitidoException;
 import com.crediticio.auth.shared.exception.RolNotFoundException;
+import com.crediticio.auth.shared.exception.SelfDeactivationException;
 import com.crediticio.auth.shared.exception.UserNotFoundException;
 import com.crediticio.auth.users.application.dto.ChangePasswordRequest;
+import com.crediticio.auth.users.application.dto.ChangeRoleRequest;
 import com.crediticio.auth.users.application.dto.CreateUserRequest;
 import com.crediticio.auth.users.application.dto.ToggleStatusRequest;
 import com.crediticio.auth.users.application.dto.UserResponse;
@@ -19,6 +21,7 @@ import com.crediticio.auth.users.ports.input.ChangePasswordInputPort;
 import com.crediticio.auth.users.ports.input.CreateUserInputPort;
 import com.crediticio.auth.users.ports.input.GetUserInputPort;
 import com.crediticio.auth.users.ports.input.ToggleUserStatusInputPort;
+import com.crediticio.auth.users.ports.input.UpdateUserRoleInputPort;
 import com.crediticio.auth.users.ports.output.UserRepositoryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +36,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class UserService implements CreateUserInputPort, GetUserInputPort, ToggleUserStatusInputPort, ChangePasswordInputPort {
+public class UserService implements CreateUserInputPort, GetUserInputPort, ToggleUserStatusInputPort, UpdateUserRoleInputPort, ChangePasswordInputPort {
 
     private static final String USUARIO_NO_ENCONTRADO = "Usuario no encontrado con id: ";
 
@@ -94,9 +97,13 @@ public class UserService implements CreateUserInputPort, GetUserInputPort, Toggl
     }
 
     @Override
-    public UserResponse toggleStatus(Long id, ToggleStatusRequest request) {
+    public UserResponse toggleStatus(Long id, ToggleStatusRequest request, String authenticatedEmail) {
         Usuario usuario = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(USUARIO_NO_ENCONTRADO + id));
+
+        if (!request.getActivo() && usuario.getEmail().equals(authenticatedEmail)) {
+            throw new SelfDeactivationException("No puede desactivarse a sí mismo");
+        }
 
         Usuario updated = Usuario.builder()
                 .id(usuario.getId())
@@ -110,6 +117,34 @@ public class UserService implements CreateUserInputPort, GetUserInputPort, Toggl
                 .build();
 
         Usuario saved = userRepository.save(updated);
+        return toResponse(saved);
+    }
+
+    @Override
+    public UserResponse updateRole(Long id, ChangeRoleRequest request) {
+        Usuario usuario = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(USUARIO_NO_ENCONTRADO + id));
+
+        if (!RolSistema.PERMITIDOS.contains(request.getRolNombre())) {
+            throw new RolNoPermitidoException("Rol no permitido: " + request.getRolNombre());
+        }
+
+        Rol nuevoRol = rolRepository.findByNombre(request.getRolNombre())
+                .orElseThrow(() -> new RolNotFoundException("Rol no encontrado: " + request.getRolNombre()));
+
+        Usuario updated = Usuario.builder()
+                .id(usuario.getId())
+                .nombre(usuario.getNombre())
+                .email(usuario.getEmail())
+                .passwordHash(usuario.getPasswordHash())
+                .rol(nuevoRol)
+                .activo(usuario.isActivo())
+                .fechaCreacion(usuario.getFechaCreacion())
+                .creadoPor(usuario.getCreadoPor())
+                .build();
+
+        Usuario saved = userRepository.save(updated);
+        log.info("Rol actualizado: userId={}, nuevoRol={}", id, nuevoRol.getNombre());
         return toResponse(saved);
     }
 
