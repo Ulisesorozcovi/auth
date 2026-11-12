@@ -2,6 +2,7 @@ package com.crediticio.auth.users.infrastructure.input;
 
 import com.crediticio.auth.shared.response.ApiError;
 import com.crediticio.auth.users.application.dto.ChangePasswordRequest;
+import com.crediticio.auth.users.application.dto.ChangeRoleRequest;
 import com.crediticio.auth.users.application.dto.CreateUserRequest;
 import com.crediticio.auth.users.application.dto.ToggleStatusRequest;
 import com.crediticio.auth.users.application.dto.UserResponse;
@@ -9,6 +10,7 @@ import com.crediticio.auth.users.ports.input.ChangePasswordInputPort;
 import com.crediticio.auth.users.ports.input.CreateUserInputPort;
 import com.crediticio.auth.users.ports.input.GetUserInputPort;
 import com.crediticio.auth.users.ports.input.ToggleUserStatusInputPort;
+import com.crediticio.auth.users.ports.input.UpdateUserRoleInputPort;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -39,6 +41,7 @@ public class UsuarioController {
     private final CreateUserInputPort createUserInputPort;
     private final GetUserInputPort getUserInputPort;
     private final ToggleUserStatusInputPort toggleUserStatusInputPort;
+    private final UpdateUserRoleInputPort updateUserRoleInputPort;
     private final ChangePasswordInputPort changePasswordInputPort;
 
     @PostMapping
@@ -93,15 +96,34 @@ public class UsuarioController {
     @PatchMapping("/{id}/estado")
     @Operation(
             summary = "Activar o desactivar usuario",
-            description = "Cambia el estado activo/inactivo de un usuario. Solo ADMINISTRADOR_RIESGO."
+            description = "Cambia el estado activo/inactivo de un usuario. Solo ADMINISTRADOR_RIESGO. Un admin no puede desactivarse a sí mismo."
     )
     @ApiResponse(responseCode = "200", description = "Estado actualizado")
+    @ApiResponse(responseCode = "400", description = "Intento de auto-desactivación",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
     @ApiResponse(responseCode = "404", description = "Usuario no encontrado",
             content = @Content(schema = @Schema(implementation = ApiError.class)))
     public ResponseEntity<UserResponse> toggleStatus(
             @PathVariable Long id,
-            @Valid @RequestBody ToggleStatusRequest request) {
-        return ResponseEntity.ok(toggleUserStatusInputPort.toggleStatus(id, request));
+            @Valid @RequestBody ToggleStatusRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(toggleUserStatusInputPort.toggleStatus(id, request, authentication.getName()));
+    }
+
+    @PatchMapping("/{id}/rol")
+    @Operation(
+            summary = "Cambiar rol de usuario",
+            description = "Cambia el rol asignado a un usuario. Solo ADMINISTRADOR_RIESGO."
+    )
+    @ApiResponse(responseCode = "200", description = "Rol actualizado")
+    @ApiResponse(responseCode = "400", description = "Rol no válido o no permitido",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
+    @ApiResponse(responseCode = "404", description = "Usuario no encontrado",
+            content = @Content(schema = @Schema(implementation = ApiError.class)))
+    public ResponseEntity<UserResponse> updateRole(
+            @PathVariable Long id,
+            @Valid @RequestBody ChangeRoleRequest request) {
+        return ResponseEntity.ok(updateUserRoleInputPort.updateRole(id, request));
     }
 
     @PatchMapping("/{id}/password")

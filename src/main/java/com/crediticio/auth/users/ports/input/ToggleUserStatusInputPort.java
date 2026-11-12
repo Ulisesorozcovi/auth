@@ -5,5 +5,5 @@ import com.crediticio.auth.users.application.dto.UserResponse;
 
 public interface ToggleUserStatusInputPort {
 
-    UserResponse toggleStatus(Long id, ToggleStatusRequest request);
+    UserResponse toggleStatus(Long id, ToggleStatusRequest request, String authenticatedEmail);
 }
