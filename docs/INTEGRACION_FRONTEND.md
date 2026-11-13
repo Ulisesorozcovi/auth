@@ -92,7 +92,8 @@ Todos bajo `/api/v1`. "Publico" = sin `Authorization`.
 | `POST` | `/usuarios` | `ADMINISTRADOR_RIESGO` | `{ nombre, email, password, idRol }` |
 | `GET` | `/usuarios` | `ADMINISTRADOR_RIESGO` | — |
 | `GET` | `/usuarios/{id}` | Administrador (cualquiera); analista (solo el suyo) | — |
-| `PATCH` | `/usuarios/{id}/estado` | `ADMINISTRADOR_RIESGO` | `{ "activo": true \| false }` |
+| `PATCH` | `/usuarios/{id}/estado` | `ADMINISTRADOR_RIESGO` (no a si mismo) | `{ "activo": true \| false }` |
+| `PATCH` | `/usuarios/{id}/rol` | `ADMINISTRADOR_RIESGO` | `{ "rolNombre": "ANALISTA_CREDITO" }` |
 | `PATCH` | `/usuarios/{id}/password` | Administrador (resetea a cualquiera); analista (solo la suya) | `{ "currentPassword"?, "newPassword" }` |
 
 `Usuario` (respuesta de crear, listar y consultar):
@@ -121,7 +122,7 @@ Notas:
 
 | Rol (`rol` / `rolNombre`) | Que puede hacer |
 |---|---|
-| `ADMINISTRADOR_RIESGO` | Todo: crear, listar y activar/desactivar usuarios, resetear contrasenas |
+| `ADMINISTRADOR_RIESGO` | Todo: crear, listar, activar/desactivar, cambiar rol de usuarios, resetear contrasenas |
 | `ANALISTA_CREDITO` | Ver su propio perfil y cambiar su propia contrasena |
 
 El backend es quien hace cumplir los permisos (devuelve 403). El frontend solo debe **ocultar** lo que el rol no puede usar.
@@ -258,6 +259,7 @@ Toda respuesta de error tiene el mismo formato:
 | 400 | `VALIDATION_ERROR` | Campos invalidos | Mostrar `details` junto a cada campo |
 | 400 | `ROL_NOT_FOUND` | `idRol` no existe | Error de programacion: revisar el mapa de roles |
 | 400 | `ROL_NOT_ALLOWED` | Rol fuera de los dos permitidos | Idem |
+| 400 | `SELF_DEACTIVATION` | Admin intenta desactivarse a si mismo | Deshabilitar el boton para el usuario actual |
 | 400 | `MALFORMED_REQUEST` / `INVALID_PARAMETER` | JSON o parametro invalido | Error de programacion |
 | 401 | `INVALID_CREDENTIALS` (login) | Correo o contrasena incorrectos, o usuario desactivado | Mensaje generico "Correo o contrasena incorrectos". **El backend no indica cual fallo** |
 | 401 | `INVALID_CREDENTIALS` (refresh) | Refresh token vencido, usado, revocado o invalido | Limpiar sesion y llevar al login |
@@ -291,6 +293,7 @@ Recomendaciones:
 | El login no devuelve `userId` | Llamar a `GET /auth/validate` tras el login |
 | No hay endpoint de "mi perfil" | Usar `GET /usuarios/{id}` con el `userId` obtenido |
 | No hay registro publico | La pantalla `/crear-cuenta` actual debe retirarse; el alta es del administrador |
+| Un admin no puede desactivarse a si mismo | Deshabilitar el boton de desactivar para el usuario logueado |
 | Cambiar la contrasena no cierra otras sesiones | Las sesiones abiertas siguen hasta 7 dias |
 | Sin limite de intentos de login | El frontend no debe asumir proteccion contra fuerza bruta |
 

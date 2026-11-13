@@ -310,7 +310,7 @@ Body: (vacio)
 
 ### PATCH /usuarios/{id}/estado
 
-Activa o desactiva un usuario. Un usuario desactivado no puede hacer login.
+Activa o desactiva un usuario. Un usuario desactivado no puede hacer login. **Un administrador no puede desactivarse a si mismo.**
 
 **Acceso:** Solo ADMINISTRADOR_RIESGO
 
@@ -344,6 +344,51 @@ Activa o desactiva un usuario. Un usuario desactivado no puede hacer login.
 
 | HTTP | errorCode | Causa |
 |---|---|---|
+| 400 | `SELF_DEACTIVATION` | El administrador intento desactivarse a si mismo |
+| 401 | `UNAUTHORIZED` | Sin token |
+| 403 | `ACCESS_DENIED` | El usuario no es ADMINISTRADOR_RIESGO |
+| 404 | `USER_NOT_FOUND` | No existe usuario con ese ID |
+
+---
+
+### PATCH /usuarios/{id}/rol
+
+Cambia el rol asignado a un usuario.
+
+**Acceso:** Solo ADMINISTRADOR_RIESGO
+
+**Request:**
+
+```json
+{
+  "rolNombre": "ANALISTA_CREDITO"
+}
+```
+
+| Campo | Tipo | Validacion |
+|---|---|---|
+| `rolNombre` | string | Requerido. Debe ser `ADMINISTRADOR_RIESGO` o `ANALISTA_CREDITO` |
+
+**Response 200:**
+
+```json
+{
+  "id": 2,
+  "nombre": "Ana Garcia",
+  "email": "ana.garcia@ejemplo.com",
+  "rolNombre": "ANALISTA_CREDITO",
+  "activo": true,
+  "fechaCreacion": "2026-10-05T09:15:00",
+  "fechaModificacion": "2026-10-07T16:30:00"
+}
+```
+
+**Errores:**
+
+| HTTP | errorCode | Causa |
+|---|---|---|
+| 400 | `VALIDATION_ERROR` | `rolNombre` vacio |
+| 400 | `ROL_NOT_ALLOWED` | El rol no es `ADMINISTRADOR_RIESGO` ni `ANALISTA_CREDITO` |
 | 401 | `UNAUTHORIZED` | Sin token |
 | 403 | `ACCESS_DENIED` | El usuario no es ADMINISTRADOR_RIESGO |
 | 404 | `USER_NOT_FOUND` | No existe usuario con ese ID |
@@ -434,6 +479,7 @@ Todas las respuestas de error usan el mismo formato:
 | `ROL_NOT_FOUND` | 400 | El `idRol` enviado no existe |
 | `MALFORMED_REQUEST` | 400 | Cuerpo de la peticion que no es JSON valido o con tipos incorrectos |
 | `INVALID_PARAMETER` | 400 | Parametro de ruta o de consulta con un tipo invalido (por ejemplo `/usuarios/abc`) |
+| `SELF_DEACTIVATION` | 400 | El administrador intento desactivarse a si mismo |
 | `DUPLICATE_EMAIL` | 409 | Ya existe un usuario registrado con ese email |
 
 ---
@@ -442,7 +488,7 @@ Todas las respuestas de error usan el mismo formato:
 
 | ID | Nombre | Descripcion |
 |---|---|---|
-| 1 | `ADMINISTRADOR_RIESGO` | Acceso completo. Puede crear usuarios, listar, activar/desactivar y resetear contrasenas |
+| 1 | `ADMINISTRADOR_RIESGO` | Acceso completo. Puede crear usuarios, listar, activar/desactivar, cambiar rol y resetear contrasenas |
 | 2 | `ANALISTA_CREDITO` | Acceso limitado. Puede ver su propio perfil, cambiar su contrasena, y usar refresh/validate |
 
 ---

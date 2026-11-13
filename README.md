@@ -50,7 +50,7 @@ com.crediticio.auth/
 │   ├── application/         # UserService + DTOs
 │   ├── domain/              # Usuario (entidad pura)
 │   ├── ports/
-│   │   ├── input/           # CreateUser, GetUser, ToggleStatus, ChangePassword
+│   │   ├── input/           # CreateUser, GetUser, ToggleStatus, ChangePassword, UpdateUserRole
 │   │   └── output/          # UserRepositoryPort
 │   └── infrastructure/
 │       ├── input/           # UsuarioController
@@ -156,7 +156,7 @@ La aplicacion arranca en `http://localhost:8081`. Flyway ejecuta las migraciones
 
 ### Despliegue
 
-El repositorio **no contiene** ningun secreto ni la base de datos: al desplegar en cualquier servidor, contenedor o plataforma hay que **configurar ahi mismo** las variables de la tabla anterior (`SPRING_DATASOURCE_*`, `JWT_SECRET`, `CORS_ALLOWED_ORIGINS`). El pipeline de CI (`.github/workflows/ci.yml`) solo compila y prueba contra H2, por eso no necesita secretos; **no despliega**.
+El repositorio **no contiene** ningun secreto ni la base de datos: al desplegar en cualquier servidor, contenedor o plataforma hay que **configurar ahi mismo** las variables de la tabla anterior (`SPRING_DATASOURCE_*`, claves RSA, `CORS_ALLOWED_ORIGINS`). El pipeline de CI/CD (`.github/workflows/ci.yml`) compila, prueba contra H2 y, tras pasar SonarCloud + CodeQL + Dependency Review, **despliega automaticamente a Render** en cada push a `main` (ver seccion [CI/CD](#cicd)).
 
 Lista de verificacion antes de desplegar:
 
@@ -232,7 +232,8 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 | `POST` | `/` | Crea usuario con rol asignado | ADMINISTRADOR_RIESGO |
 | `GET` | `/` | Lista todos los usuarios | ADMINISTRADOR_RIESGO |
 | `GET` | `/{id}` | Detalle de un usuario | ADMINISTRADOR_RIESGO (cualquiera), ANALISTA_CREDITO (solo propio) |
-| `PATCH` | `/{id}/estado` | Activa o desactiva un usuario | ADMINISTRADOR_RIESGO |
+| `PATCH` | `/{id}/estado` | Activa o desactiva un usuario. Un admin no puede desactivarse a si mismo | ADMINISTRADOR_RIESGO |
+| `PATCH` | `/{id}/rol` | Cambia el rol de un usuario | ADMINISTRADOR_RIESGO |
 | `PATCH` | `/{id}/password` | Cambia la contrasena de un usuario | ADMINISTRADOR_RIESGO (reset), ANALISTA_CREDITO (solo propia, requiere contrasena actual) |
 
 ### Matriz RBAC
@@ -246,7 +247,8 @@ Disponible en `http://localhost:8081/swagger-ui.html` — incluye esquema Bearer
 | `POST /usuarios` | Si | — | — |
 | `GET /usuarios` | Si | — | — |
 | `GET /usuarios/{id}` | Si | Solo propio | — |
-| `PATCH /usuarios/{id}/estado` | Si | — | — |
+| `PATCH /usuarios/{id}/estado` | Si (no a si mismo) | — | — |
+| `PATCH /usuarios/{id}/rol` | Si | — | — |
 | `PATCH /usuarios/{id}/password` | Si (cualquiera) | Solo propia | — |
 
 ### Respuesta de error
@@ -285,6 +287,7 @@ Seed: `ADMINISTRADOR_RIESGO`, `ANALISTA_CREDITO`.
 | `password_hash` | VARCHAR(255) | NOT NULL |
 | `id_rol` | INTEGER | FK → `roles.id_rol` |
 | `activo` | BOOLEAN | DEFAULT TRUE |
+| `creado_por` | VARCHAR(255) | Nullable (email del admin que creo el usuario; `BOOTSTRAP` para el primer admin) |
 | `fecha_creacion` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |
 | `fecha_modificacion` | TIMESTAMP | Nullable |
 
@@ -424,15 +427,17 @@ Documentado en [`docs/SECURITY_OWASP.md`](docs/SECURITY_OWASP.md). Cubre las 10 
 
 | Clase | Tipo | Tests | Cobertura |
 |---|---|---|---|
-| `UserServiceTest` | Unitario | 18 | createUser (normalizacion, rol permitido, carrera), getAllUsers, getUserById, toggleStatus, changePassword |
-| `AuthServiceTest` | Unitario | 19 | login, refresh (rotacion, reutilizacion, vencido, inactivo, carrera), logout, validate |
+| `UserServiceTest` | Unitario | 24 | createUser (normalizacion, rol permitido, carrera), getAllUsers, getUserById, toggleStatus, changePassword, updateRole |
+| `AuthServiceTest` | Unitario | 20 | login, refresh (rotacion, reutilizacion, vencido, inactivo, carrera), logout, validate |
 | `JwtTokenProviderTest` | Unitario | 12 | RS256 claims, iss/aud, vencido, alterado, rechazo HMAC, refresh opaco/hash, limites de configuracion |
 | `AdminBootstrapRunnerTest` | Unitario | 4 | Primer administrador por variables de entorno |
 | `HttpErrorHandlingIntegrationTest` | Integracion (servidor HTTP real) | 12 | Errores de entrada 400 (JSON mal formado, tipos), UTF-8 en 401/403, `idRol` inexistente, refresh invalido 401 |
-| `AuthFlowIntegrationTest` | Integracion | 44 | Login, CRUD, RBAC, cambio contrasena, refresh/logout, concurrencia, usuarios desactivados |
+| `AuthFlowIntegrationTest` | Integracion | 49 | Login, CRUD, RBAC, cambio contrasena y rol, refresh/logout, concurrencia, usuarios desactivados, auto-desactivacion |
+| `UserRoleIntegrationTest` | Integracion | 7 | Cambio de rol: RBAC, rol valido/invalido, usuario inexistente |
+| `RegressionTest` | Integracion (regresion) | 5 | Regresiones de errores corregidos |
 | `AuthApplicationTests` | Contexto | 1 | Spring Boot context loads |
 
-**Total: 110 tests** (verificado con `mvnw clean test` en JDK 21).
+**Total: 134 tests** (verificado con `mvnw clean test` en JDK 21).
 
 ## Decisiones arquitectonicas (ADR)
 
@@ -441,10 +446,20 @@ Documentado en [`docs/SECURITY_OWASP.md`](docs/SECURITY_OWASP.md). Cubre las 10 
 | [ADR-001](docs/adr/ADR-001-arquitectura-hexagonal.md) | Hexagonal (Ports & Adapters) sobre Package by Layer |
 | [ADR-002](docs/adr/ADR-002-autenticacion-jwt-stateless.md) | JWT Stateless sobre sesiones/OAuth2 |
 | [ADR-003](docs/adr/ADR-003-base-de-datos-compartida.md) | BD compartida con prefijos Flyway diferenciados |
+| [ADR-004](docs/adr/ADR-004-hu08-roles-correo-primer-administrador.md) | HU08: roles, correo normalizado y primer administrador |
+| [ADR-005](docs/adr/ADR-005-hu09-sesion-refresh-token-rotacion.md) | HU09: sesion con refresh token y rotacion |
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`): en cada push/PR a `main` ejecuta tests, construye el JAR y lo sube como artefacto con retencion de 7 dias.
+GitHub Actions (`.github/workflows/ci.yml`): en cada push/PR a `main` ejecuta un pipeline de 5 etapas:
+
+1. **Build and test:** compila, ejecuta tests unitarios e integracion contra H2, sube reportes Surefire/JaCoCo y el JAR como artefacto (retencion 7 dias).
+2. **SonarCloud:** analisis estatico y Quality Gate.
+3. **CodeQL:** analisis de seguridad (java-kotlin).
+4. **Dependency Review:** revisa cambios de dependencias en PRs (falla con severidad >= moderate).
+5. **Deploy to Render:** solo en push a `main` tras pasar las 4 etapas anteriores. Dispara deploy, espera que el servicio este `live` y verifica `/actuator/health`.
+
+Dependabot esta configurado para actualizacion automatica de dependencias.
 
 ## Coordinacion con Scoring API y Query API
 
