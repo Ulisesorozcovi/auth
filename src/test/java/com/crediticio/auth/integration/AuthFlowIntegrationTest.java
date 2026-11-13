@@ -1,5 +1,7 @@
 package com.crediticio.auth.integration;
 
+import static com.crediticio.auth.integration.TestCredentials.*;
+
 import com.crediticio.auth.authentication.ports.output.PasswordEncoderPort;
 import com.crediticio.auth.roles.infrastructure.output.RolJpaEntity;
 import com.crediticio.auth.roles.infrastructure.output.RolJpaRepository;
@@ -61,17 +63,17 @@ class AuthFlowIntegrationTest {
         analistaRol = rolRepository.save(new RolJpaEntity(null, "ANALISTA_CREDITO"));
 
         UsuarioJpaEntity admin = new UsuarioJpaEntity();
-        admin.setNombre("Admin Test");
-        admin.setEmail("admin@test.com");
-        admin.setPasswordHash(passwordEncoder.encode("admin123"));
+        admin.setNombre(ADMIN_NOMBRE);
+        admin.setEmail(ADMIN_EMAIL);
+        admin.setPasswordHash(passwordEncoder.encode(ADMIN_PASSWORD));
         admin.setRol(adminRol);
         admin.setActivo(true);
         usuarioRepository.save(admin);
 
         UsuarioJpaEntity analista = new UsuarioJpaEntity();
-        analista.setNombre("Analista Test");
-        analista.setEmail("analista@test.com");
-        analista.setPasswordHash(passwordEncoder.encode("analista123"));
+        analista.setNombre(ANALISTA_NOMBRE);
+        analista.setEmail(ANALISTA_EMAIL);
+        analista.setPasswordHash(passwordEncoder.encode(ANALISTA_PASSWORD));
         analista.setRol(analistaRol);
         analista.setActivo(true);
         usuarioRepository.save(analista);
@@ -121,7 +123,7 @@ class AuthFlowIntegrationTest {
         void login_doesNotIssueAuthenticationCookieOrHttpSession() throws Exception {
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"admin@test.com\",\"password\":\"admin123\"}"))
+                            .content("{\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"" + ADMIN_PASSWORD + "\"}"))
                     .andExpect(status().isOk())
                     .andExpect(header().doesNotExist("Set-Cookie"))
                     .andExpect(cookie().doesNotExist("JSESSIONID"));
@@ -143,7 +145,7 @@ class AuthFlowIntegrationTest {
         void login_success_returnsTokenAndRol() throws Exception {
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"admin@test.com\",\"password\":\"admin123\"}"))
+                            .content("{\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"" + ADMIN_PASSWORD + "\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").isNotEmpty())
                     .andExpect(jsonPath("$.rol").value("ADMINISTRADOR_RIESGO"));
@@ -153,7 +155,7 @@ class AuthFlowIntegrationTest {
         void login_wrongPassword_returns401() throws Exception {
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"admin@test.com\",\"password\":\"wrong\"}"))
+                            .content("{\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"wrong\"}"))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.errorCode").value("INVALID_CREDENTIALS"));
         }
@@ -182,12 +184,12 @@ class AuthFlowIntegrationTest {
 
         @Test
         void createUser_asAdmin_returns201() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":" + analistaRol.getId() + "}"))
+                            .content("{\"nombre\":\"Nuevo\",\"email\":\"nuevo@test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":" + analistaRol.getId() + "}"))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.nombre").value("Nuevo"))
                     .andExpect(jsonPath("$.email").value("nuevo@test.com"))
@@ -198,12 +200,12 @@ class AuthFlowIntegrationTest {
 
         @Test
         void createUser_asAnalista_returns403() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":1}"))
+                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":1}"))
                     .andExpect(status().isForbidden());
         }
 
@@ -211,57 +213,57 @@ class AuthFlowIntegrationTest {
         void createUser_unauthenticated_returns401() throws Exception {
             mockMvc.perform(post("/api/v1/usuarios")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":1}"))
+                            .content("{\"nombre\":\"X\",\"email\":\"x@test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":1}"))
                     .andExpect(status().isUnauthorized());
         }
 
         @Test
         void createUser_duplicateEmail_returns409() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Dup\",\"email\":\"admin@test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":" + adminRol.getId() + "}"))
+                            .content("{\"nombre\":\"Dup\",\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":" + adminRol.getId() + "}"))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.errorCode").value("DUPLICATE_EMAIL"));
         }
 
         @Test
         void createUser_duplicateEmailDifferentCase_returns409() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Dup\",\"email\":\"ADMIN@Test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":" + adminRol.getId() + "}"))
+                            .content("{\"nombre\":\"Dup\",\"email\":\"ADMIN@Test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":" + adminRol.getId() + "}"))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.errorCode").value("DUPLICATE_EMAIL"));
         }
 
         @Test
         void createUser_emailIsStoredNormalized_andLoginIsCaseInsensitive() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Mixto\",\"email\":\"Mixto@Test.COM\",\"password\":\"Segura2026!xyz\",\"idRol\":" + analistaRol.getId() + "}"))
+                            .content("{\"nombre\":\"Mixto\",\"email\":\"Mixto@Test.COM\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":" + analistaRol.getId() + "}"))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.email").value("mixto@test.com"));
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"MIXTO@test.com\",\"password\":\"Segura2026!xyz\"}"))
+                            .content("{\"email\":\"MIXTO@test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\"}"))
                     .andExpect(status().isOk());
 
-            org.junit.jupiter.api.Assertions.assertEquals("admin@test.com",
+            org.junit.jupiter.api.Assertions.assertEquals(ADMIN_EMAIL,
                     usuarioRepository.findByEmail("mixto@test.com").orElseThrow().getCreadoPor());
         }
 
         @Test
         void createUser_shortPassword_returns400() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
@@ -275,19 +277,19 @@ class AuthFlowIntegrationTest {
         @Test
         void createUser_roleNotAllowed_returns400() throws Exception {
             RolJpaEntity otro = rolRepository.save(new RolJpaEntity(null, "SUPERUSUARIO"));
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"nombre\":\"Otro\",\"email\":\"otro@test.com\",\"password\":\"Segura2026!xyz\",\"idRol\":" + otro.getId() + "}"))
+                            .content("{\"nombre\":\"Otro\",\"email\":\"otro@test.com\",\"password\":\"" + NEW_USER_PASSWORD + "\",\"idRol\":" + otro.getId() + "}"))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.errorCode").value("ROL_NOT_ALLOWED"));
         }
 
         @Test
         void listUsers_asAdmin_returnsList() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(get("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token))
@@ -297,7 +299,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void listUsers_asAnalista_returns403() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
 
             mockMvc.perform(get("/api/v1/usuarios")
                             .header("Authorization", "Bearer " + token))
@@ -306,30 +308,30 @@ class AuthFlowIntegrationTest {
 
         @Test
         void getUserById_asAdmin_anyUser() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(get("/api/v1/usuarios/" + analistaId)
                             .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.email").value("analista@test.com"));
+                    .andExpect(jsonPath("$.email").value(ANALISTA_EMAIL));
         }
 
         @Test
         void getUserById_asAnalista_ownProfile_success() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(get("/api/v1/usuarios/" + analistaId)
                             .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.email").value("analista@test.com"));
+                    .andExpect(jsonPath("$.email").value(ANALISTA_EMAIL));
         }
 
         @Test
         void getUserById_asAnalista_otherProfile_returns403() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long adminId = usuarioRepository.findByEmail("admin@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long adminId = usuarioRepository.findByEmail(ADMIN_EMAIL).get().getId();
 
             mockMvc.perform(get("/api/v1/usuarios/" + adminId)
                             .header("Authorization", "Bearer " + token))
@@ -338,8 +340,8 @@ class AuthFlowIntegrationTest {
 
         @Test
         void toggleStatus_asAdmin_deactivatesUser() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/estado")
                             .header("Authorization", "Bearer " + token)
@@ -351,8 +353,8 @@ class AuthFlowIntegrationTest {
 
         @Test
         void toggleStatus_asAnalista_returns403() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long adminId = usuarioRepository.findByEmail("admin@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long adminId = usuarioRepository.findByEmail(ADMIN_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + adminId + "/estado")
                             .header("Authorization", "Bearer " + token)
@@ -367,8 +369,8 @@ class AuthFlowIntegrationTest {
 
         @Test
         void changePassword_asAdmin_resetsAnyUser_returns204() throws Exception {
-            String token = loginAndGetToken("admin@test.com", "admin123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
                             .header("Authorization", "Bearer " + token)
@@ -379,45 +381,45 @@ class AuthFlowIntegrationTest {
             // Verificar que la nueva contrasena funciona
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"analista@test.com\",\"password\":\"NuevaClave123!\"}"))
+                            .content("{\"email\":\"" + ANALISTA_EMAIL + "\",\"password\":\"NuevaClave123!\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").isNotEmpty());
         }
 
         @Test
         void changePassword_asAnalista_ownPassword_returns204() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"currentPassword\":\"analista123\",\"newPassword\":\"CambioClave1!\"}"))
+                            .content("{\"currentPassword\":\"" + ANALISTA_PASSWORD + "\",\"newPassword\":\"CambioClave1!\"}"))
                     .andExpect(status().isNoContent());
 
             // Verificar que la nueva contrasena funciona
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"analista@test.com\",\"password\":\"CambioClave1!\"}"))
+                            .content("{\"email\":\"" + ANALISTA_EMAIL + "\",\"password\":\"CambioClave1!\"}"))
                     .andExpect(status().isOk());
         }
 
         @Test
         void changePassword_asAnalista_otherUser_returns403() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long adminId = usuarioRepository.findByEmail("admin@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long adminId = usuarioRepository.findByEmail(ADMIN_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + adminId + "/password")
                             .header("Authorization", "Bearer " + token)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"currentPassword\":\"analista123\",\"newPassword\":\"NuevaClave1!\"}"))
+                            .content("{\"currentPassword\":\"" + ANALISTA_PASSWORD + "\",\"newPassword\":\"NuevaClave1!\"}"))
                     .andExpect(status().isForbidden());
         }
 
         @Test
         void changePassword_asAnalista_wrongCurrentPassword_returns401() throws Exception {
-            String token = loginAndGetToken("analista@test.com", "analista123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String token = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/password")
                             .header("Authorization", "Bearer " + token)
@@ -441,9 +443,9 @@ class AuthFlowIntegrationTest {
 
         @Test
         void deactivatedUser_tokenIsRejected_returns401() throws Exception {
-            String adminToken = loginAndGetToken("admin@test.com", "admin123");
-            String analistaToken = loginAndGetToken("analista@test.com", "analista123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String adminToken = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            String analistaToken = loginAndGetToken(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/estado")
                             .header("Authorization", "Bearer " + adminToken)
@@ -459,9 +461,9 @@ class AuthFlowIntegrationTest {
 
         @Test
         void deactivatedUser_cannotRefreshToken_returns401() throws Exception {
-            String adminToken = loginAndGetToken("admin@test.com", "admin123");
-            String analistaRefresh = loginAndGetRefresh("analista@test.com", "analista123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String adminToken = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            String analistaRefresh = loginAndGetRefresh(ANALISTA_EMAIL, ANALISTA_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/estado")
                             .header("Authorization", "Bearer " + adminToken)
@@ -477,8 +479,8 @@ class AuthFlowIntegrationTest {
 
         @Test
         void deactivatedUser_cannotLogin_returns401() throws Exception {
-            String adminToken = loginAndGetToken("admin@test.com", "admin123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String adminToken = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/estado")
                             .header("Authorization", "Bearer " + adminToken)
@@ -488,14 +490,14 @@ class AuthFlowIntegrationTest {
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"analista@test.com\",\"password\":\"analista123\"}"))
+                            .content("{\"email\":\"" + ANALISTA_EMAIL + "\",\"password\":\"" + ANALISTA_PASSWORD + "\"}"))
                     .andExpect(status().isUnauthorized());
         }
 
         @Test
         void reactivatedUser_canUseTokenAgain() throws Exception {
-            String adminToken = loginAndGetToken("admin@test.com", "admin123");
-            Long analistaId = usuarioRepository.findByEmail("analista@test.com").get().getId();
+            String adminToken = loginAndGetToken(ADMIN_EMAIL, ADMIN_PASSWORD);
+            Long analistaId = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getId();
 
             mockMvc.perform(patch("/api/v1/usuarios/" + analistaId + "/estado")
                             .header("Authorization", "Bearer " + adminToken)
@@ -511,7 +513,7 @@ class AuthFlowIntegrationTest {
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"analista@test.com\",\"password\":\"analista123\"}"))
+                            .content("{\"email\":\"" + ANALISTA_EMAIL + "\",\"password\":\"" + ANALISTA_PASSWORD + "\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").isNotEmpty());
         }
@@ -522,7 +524,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void login_returnsAccessAndRefreshTokens() throws Exception {
-            JsonNode body = login("admin@test.com", "admin123");
+            JsonNode body = login(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             org.junit.jupiter.api.Assertions.assertFalse(body.get("token").asText().isEmpty());
             org.junit.jupiter.api.Assertions.assertFalse(body.get("refreshToken").asText().isEmpty());
@@ -532,7 +534,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refreshTokenIsStoredOnlyAsHash() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             org.junit.jupiter.api.Assertions.assertTrue(
                     refreshTokenRepository.findAll().stream().noneMatch(t -> refresh.equals(t.getTokenHash())));
@@ -542,7 +544,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refresh_returnsNewAccessAndRotatedRefresh() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             String response = refreshWith(refresh)
                     .andExpect(status().isOk())
@@ -557,19 +559,19 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refresh_newAccessTokenWorks() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
             String response = refreshWith(refresh).andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
             String access = objectMapper.readTree(response).get("token").asText();
 
             mockMvc.perform(get("/api/v1/auth/validate").header("Authorization", "Bearer " + access))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.email").value("admin@test.com"));
+                    .andExpect(jsonPath("$.email").value(ADMIN_EMAIL));
         }
 
         @Test
         void refresh_usedTokenIsRejected_andRevokesTheWholeSession() throws Exception {
-            String primero = loginAndGetRefresh("admin@test.com", "admin123");
+            String primero = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
             String response = refreshWith(primero).andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
             String segundo = objectMapper.readTree(response).get("refreshToken").asText();
@@ -597,7 +599,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refresh_expiredToken_returns401() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
             refreshTokenRepository.findAll().forEach(t -> {
                 t.setExpiraEn(java.time.LocalDateTime.now().minusMinutes(1));
                 refreshTokenRepository.save(t);
@@ -608,7 +610,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refresh_doesNotRequireAccessToken() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             // Sin encabezado Authorization (el access token pudo haber vencido)
             refreshWith(refresh).andExpect(status().isOk());
@@ -616,7 +618,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void logout_invalidatesRefreshToken() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
 
             mockMvc.perform(post("/api/v1/auth/logout")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -636,7 +638,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void refresh_concurrentRequestsWithSameToken_onlyOneSucceeds() throws Exception {
-            String refresh = loginAndGetRefresh("admin@test.com", "admin123");
+            String refresh = loginAndGetRefresh(ADMIN_EMAIL, ADMIN_PASSWORD);
             int hilos = 6;
             java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(hilos);
             java.util.concurrent.CountDownLatch salida = new java.util.concurrent.CountDownLatch(1);
@@ -668,7 +670,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void accessToken_withWrongIssuer_isRejected() throws Exception {
-            java.util.UUID adminUuid = usuarioRepository.findByEmail("admin@test.com").get().getUuidPublico();
+            java.util.UUID adminUuid = usuarioRepository.findByEmail(ADMIN_EMAIL).get().getUuidPublico();
             java.security.interfaces.RSAPrivateKey pk;
             try (java.io.InputStream in = new org.springframework.core.io.FileSystemResource(
                     TestRsaKeyInitializer.getTempDir().resolve("jwt-privada-test.pem")).getInputStream()) {
@@ -689,7 +691,7 @@ class AuthFlowIntegrationTest {
 
         @Test
         void accessToken_roleClaimIsNotTrusted() throws Exception {
-            java.util.UUID analistaUuid = usuarioRepository.findByEmail("analista@test.com").get().getUuidPublico();
+            java.util.UUID analistaUuid = usuarioRepository.findByEmail(ANALISTA_EMAIL).get().getUuidPublico();
             java.security.interfaces.RSAPrivateKey pk;
             try (java.io.InputStream in = new org.springframework.core.io.FileSystemResource(
                     TestRsaKeyInitializer.getTempDir().resolve("jwt-privada-test.pem")).getInputStream()) {
@@ -723,7 +725,7 @@ class AuthFlowIntegrationTest {
                     .andReturn().getResponse().getContentAsString();
             String mala = mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"email\":\"admin@test.com\",\"password\":\"incorrecta\"}"))
+                            .content("{\"email\":\"" + ADMIN_EMAIL + "\",\"password\":\"incorrecta\"}"))
                     .andExpect(status().isUnauthorized())
                     .andReturn().getResponse().getContentAsString();
 
