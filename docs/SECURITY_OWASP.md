@@ -15,6 +15,8 @@ Este documento analiza como el backend aborda cada categoria del OWASP Top 10 (2
 **Medidas implementadas:**
 - RBAC por endpoint en `SecurityConfig.java` con Spring Security (`hasRole("ADMINISTRADOR_RIESGO")`, `hasAnyRole("ADMINISTRADOR_RIESGO", "ANALISTA_CREDITO")`).
 - Regla "solo propio" en `GET /usuarios/{id}`: el ANALISTA_CREDITO solo puede consultar su propio perfil; el controlador verifica la identidad del token vs el recurso solicitado.
+- `PATCH /usuarios/{id}/rol` restringido a ADMINISTRADOR_RIESGO; permite cambiar el rol de cualquier usuario entre los dos roles permitidos.
+- Proteccion contra auto-desactivacion: un administrador no puede desactivarse a si mismo (`SELF_DEACTIVATION`, 400).
 - Autenticacion stateless: cada request se valida de forma independiente mediante el JWT en el header `Authorization`.
 - Respuestas 401 (no autenticado) y 403 (sin permisos) con cuerpo JSON estandarizado (`ApiError`).
 
@@ -96,11 +98,11 @@ Este documento analiza como el backend aborda cada categoria del OWASP Top 10 (2
   ```
   Genera reporte HTML/JSON en `target/`. Falla el build si un CVE tiene CVSS >= 7.
 - Dependencias gestionadas por Spring Boot BOM (`spring-boot-starter-parent 3.3.5`), que parcha versiones centralizadamente.
-- CI pipeline ejecuta tests en cada push/PR.
+- CI pipeline ejecuta tests en cada push/PR. El job `dependency-review` falla PRs con dependencias de severidad >= moderate.
+- Dependabot configurado en GitHub para actualizacion automatica de dependencias.
 
 **Mitigaciones adicionales recomendadas:**
 - Integrar `dependency-check:check` en el pipeline de CI como paso obligatorio.
-- Configurar Dependabot o Renovate en GitHub para actualizacion automatica de dependencias.
 
 ---
 
